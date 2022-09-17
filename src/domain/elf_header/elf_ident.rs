@@ -1,7 +1,9 @@
 mod e_class;
+mod e_endian;
 mod e_machine;
 
 pub use self::e_class::*;
+pub use self::e_endian::*;
 pub use self::e_machine::*;
 
 use crate::domain::elf_header::{elf_ident::EClass, ErrorKind, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
@@ -11,7 +13,7 @@ pub struct Elf64Ident {
     /// 0x7f, 'E', 'L', 'F'
     pub magic_number: [u8; 4],
     pub cpu_arch: EClass,
-    pub endian: u8,
+    pub endian: EEndian,
     pub elf_format_version: u8,
     pub abi: u8,
     pub abi_version: u8,
@@ -29,6 +31,7 @@ impl Elf64Ident {
     ) -> Result<Self, ErrorKind> {
         let magic_number = [ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3];
         let cpu_arch = EClass::from_u8(cpu_arch).ok_or(ErrorKind::ConvertError)?;
+        let endian = EEndian::from_u8(endian).ok_or(ErrorKind::ConvertError)?;
 
         Ok(Self {
             magic_number,

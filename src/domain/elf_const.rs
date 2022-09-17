@@ -16,11 +16,9 @@ pub(crate) type Elf64Off = u64;
 pub(crate) type Elf64SWord = i32;
 
 // typedef __u32	Elf64_Word;
-#[allow(dead_code)]
 pub(crate) type Elf64Word = u32;
 
 // typedef __u64	Elf64_Xword;
-#[allow(dead_code)]
 pub(crate) type Elf64XWord = u64;
 
 // typedef __s64	Elf64_Sxword;

@@ -1,12 +1,16 @@
 mod domain;
 
-use crate::domain::elf_header::{EMachine, Elf64Hdr, Elf64Ident};
-use crate::domain::elf_header::{ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
+pub use domain::*;
+
+use crate::domain::elf_header::{
+    EMachine, Elf64Header, Elf64Ident, ElfHeader, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
+};
+use crate::domain::elf_section_header::Elf64SectionHeader;
 use nom::bytes::complete::tag;
 use nom::number::{complete::*, Endianness};
 use nom::IResult;
 
-pub fn parse_elf64_header(input: &[u8]) -> IResult<&[u8], Elf64Hdr> {
+pub fn parse_elf64_header(input: &[u8]) -> IResult<&[u8], Elf64Header> {
     let (input, _) = tag([ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3])(input)?;
     let (input, e_ident_4) = be_u8(input)?;
     let (input, e_ident_5) = be_u8(input)?;
@@ -53,7 +57,7 @@ pub fn parse_elf64_header(input: &[u8]) -> IResult<&[u8], Elf64Hdr> {
 
     Ok((
         input,
-        Elf64Hdr {
+        Elf64Header {
             e_ident: ident,
             e_type,
             e_machine: machine,
@@ -70,4 +74,50 @@ pub fn parse_elf64_header(input: &[u8]) -> IResult<&[u8], Elf64Hdr> {
             e_shstrndx,
         },
     ))
+}
+
+pub fn parse_elf64_section_header(
+    input: &[u8],
+    endianness: Endianness,
+) -> IResult<&[u8], Elf64SectionHeader> {
+    let (input, sh_name) = u32(endianness)(input)?;
+    let (input, sh_type) = u32(endianness)(input)?;
+    let (input, sh_flags) = u64(endianness)(input)?;
+    let (input, sh_addr) = u64(endianness)(input)?;
+    let (input, sh_offset) = u64(endianness)(input)?;
+    let (input, sh_size) = u64(endianness)(input)?;
+    let (input, sh_link) = u32(endianness)(input)?;
+    let (input, sh_info) = u32(endianness)(input)?;
+    let (input, sh_addralign) = u64(endianness)(input)?;
+    let (input, sh_entsize) = u64(endianness)(input)?;
+
+    Ok((
+        input,
+        Elf64SectionHeader {
+            sh_name,
+            sh_type,
+            sh_flags,
+            sh_addr,
+            sh_offset,
+            sh_size,
+            sh_link,
+            sh_info,
+            sh_addralign,
+            sh_entsize,
+        },
+    ))
+}
+
+pub fn show_section_names(header: Elf64Header, str_tbl_sh: Elf64SectionHeader, buf: &[u8]) {
+    for i in 0..(header.e_shnum) {
+        let addr = (header.e_shoff + (header.e_shentsize as u64 * i as u64)) as usize;
+        let (_, shdr) = parse_elf64_section_header(&buf[addr..], header.endian().unwrap()).unwrap();
+        let name_addr = (str_tbl_sh.sh_offset + shdr.sh_name as u64) as usize;
+        let (_, name) =
+            nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(|c| c == 0x00)(
+                &buf[name_addr..],
+            )
+            .unwrap();
+        println!("name: {}", String::from_utf8_lossy(name));
+    }
 }

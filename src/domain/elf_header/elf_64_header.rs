@@ -1,10 +1,11 @@
 use crate::domain::{
     elf_const::*,
-    elf_header::{elf_ident::EMachine, Elf64Ident},
+    elf_header::{elf_ident::EMachine, EEndian, Elf64Ident, ElfHeader},
 };
+use nom::number::Endianness;
 
 #[derive(Debug, PartialEq)]
-pub struct Elf64Hdr {
+pub struct Elf64Header {
     pub e_ident: Elf64Ident,
     /// file type
     pub e_type: Elf64Half,
@@ -24,4 +25,14 @@ pub struct Elf64Hdr {
     pub e_shentsize: Elf64Half,
     pub e_shnum: Elf64Half,
     pub e_shstrndx: Elf64Half,
+}
+
+impl ElfHeader for Elf64Header {
+    fn endian(&self) -> Option<Endianness> {
+        match self.e_ident.endian {
+            EEndian::ElfDataNone => None,
+            EEndian::ElfData2LSB => Some(Endianness::Little),
+            EEndian::ElfData2MSB => Some(Endianness::Big),
+        }
+    }
 }
