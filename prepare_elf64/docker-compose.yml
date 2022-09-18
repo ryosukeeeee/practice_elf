@@ -1,0 +1,7 @@
+version: '3'
+services:
+  app:
+    build: .
+    volumes:
+      - ./sample:/home/work
+    command: /bin/bash ./generate_sample_elf64_files.sh
