@@ -4,7 +4,7 @@ use crate::domain::{
 };
 use nom::number::Endianness;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Elf64Header {
     pub e_ident: Elf64Ident,
     /// file type

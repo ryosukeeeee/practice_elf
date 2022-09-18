@@ -1,4 +1,4 @@
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 #[repr(u8)]
 pub enum EClass {
     Elfclassnone = 0x00, /* Invalid class */

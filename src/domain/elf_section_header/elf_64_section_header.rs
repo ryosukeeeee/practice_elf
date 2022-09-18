@@ -1,6 +1,6 @@
 use crate::elf_const::{Elf64Addr, Elf64Off, Elf64Word, Elf64XWord};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Elf64SectionHeader {
     /// Section name, index in string tbl
     pub sh_name: Elf64Word,

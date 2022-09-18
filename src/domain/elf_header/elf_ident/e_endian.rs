@@ -1,4 +1,4 @@
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 #[repr(u8)]
 pub enum EEndian {
     ElfDataNone = 0,

@@ -1,4 +1,4 @@
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 #[repr(u16)]
 pub enum EMachine {
     EmNone = 0,

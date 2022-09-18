@@ -8,7 +8,7 @@ pub use self::e_machine::*;
 
 use crate::domain::elf_header::{elf_ident::EClass, ErrorKind, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Elf64Ident {
     /// 0x7f, 'E', 'L', 'F'
     pub magic_number: [u8; 4],

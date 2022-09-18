@@ -1,17 +1,58 @@
 mod domain;
 
-use domain::elf_program_header::{ElfSegmentFlags, ElfSegmentType};
-use domain::elf_symbol::Elf64Symbol;
 pub use domain::*;
 
-use crate::domain::elf_header::{
-    EMachine, Elf64Header, Elf64Ident, ElfHeader, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
+use std::usize;
+
+use crate::domain::{
+    elf_header::{
+        EMachine, Elf64Header, Elf64Ident, ElfHeader, ErrorKind, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
+    },
+    elf_program_header::{Elf64ProgramHeader, ElfSegmentFlags, ElfSegmentType},
+    elf_section_header::Elf64SectionHeader,
+    elf_symbol::Elf64Symbol,
 };
-use crate::domain::elf_program_header::Elf64ProgramHeader;
-use crate::domain::elf_section_header::Elf64SectionHeader;
-use nom::bytes::complete::tag;
-use nom::number::{complete::*, Endianness};
-use nom::IResult;
+use crate::elf::Elf64;
+
+use nom::{
+    bytes::complete::tag,
+    number::{complete::*, Endianness},
+    IResult,
+};
+
+pub fn parse_elf64(input: &[u8]) -> Result<Elf64, ErrorKind> {
+    let (_, header) = parse_elf64_header(input).unwrap();
+    let endian = header.endian().unwrap();
+
+    // parse section headers
+    let mut section_headers = vec![];
+    for i in 0..header.e_shnum as u64 {
+        let addr = (header.e_shoff + (header.e_shentsize as u64) * i) as usize;
+        let (_, section_header) = parse_elf64_section_header(&input[addr..], endian).unwrap();
+        section_headers.push(section_header)
+    }
+
+    // parse program headers
+    let mut program_headers = vec![];
+    for i in 0..header.e_phnum as u64 {
+        let addr = (header.e_phoff + (header.e_phentsize as u64) * i) as usize;
+        let (_, program_header) = parse_elf64_program_header(&input[addr..], endian).unwrap();
+        program_headers.push(program_header);
+    }
+
+    // section header name table
+    let shstr_addr =
+        (header.e_shoff + (header.e_shentsize as u64 * header.e_shstrndx as u64)) as usize;
+    let (_, shstr) = parse_elf64_section_header(&input[shstr_addr..], endian).unwrap();
+
+    Ok(Elf64::new(
+        header,
+        section_headers,
+        program_headers,
+        Some(shstr),
+        input.to_vec(),
+    ))
+}
 
 pub fn parse_elf64_header(input: &[u8]) -> IResult<&[u8], Elf64Header> {
     let (input, _) = tag([ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3])(input)?;
@@ -160,59 +201,4 @@ pub fn parse_elf64_symbol(input: &[u8], endianness: Endianness) -> IResult<&[u8]
             st_size,
         },
     ))
-}
-
-pub fn show_section_names(
-    header: &Elf64Header,
-    str_tbl_sh: Elf64SectionHeader,
-    buf: &[u8],
-) -> Option<Elf64SectionHeader> {
-    let mut output = None;
-    for i in 0..(header.e_shnum) {
-        let addr = (header.e_shoff + (header.e_shentsize as u64 * i as u64)) as usize;
-        let (_, shdr) = parse_elf64_section_header(&buf[addr..], header.endian().unwrap()).unwrap();
-        let name_addr = (str_tbl_sh.sh_offset + shdr.sh_name as u64) as usize;
-        let (_, name) =
-            nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(|c| c == 0x00)(
-                &buf[name_addr..],
-            )
-            .unwrap();
-        println!("name: {}", String::from_utf8_lossy(name));
-        if name == b".strtab" {
-            output = Some(shdr);
-        }
-    }
-    output
-}
-
-pub fn show_symbol_names(header: &Elf64Header, str_tab: &Elf64SectionHeader, buf: &[u8]) {
-    let endian = header.endian().unwrap();
-
-    for i in 0..header.e_shnum as u64 {
-        let addr = (header.e_shoff + (header.e_shentsize as u64 * i)) as usize;
-        let (_, shdr) = parse_elf64_section_header(&buf[addr..], endian).unwrap();
-        if shdr.sh_type != 0x02 {
-            continue;
-        }
-        println!("sym: {:?}", &shdr);
-        // find symbol table section header
-        let sym = shdr;
-        for j in 0..(sym.sh_size / sym.sh_entsize) {
-            let addr = (sym.sh_offset + (sym.sh_entsize * j)) as usize;
-            let (_, symp) = parse_elf64_symbol(&buf[addr..], endian).unwrap();
-
-            if symp.st_name == 0 {
-                continue;
-            }
-            let name = {
-                let addr = (str_tab.sh_offset + symp.st_name as u64) as usize;
-                let (_, name) = nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(
-                    |c| c == 0x00,
-                )(&buf[addr..])
-                .unwrap();
-                String::from_utf8_lossy(name)
-            };
-            println!("\t{} [{:?}]\t{}", j, symp.st_type().unwrap(), name);
-        }
-    }
 }
