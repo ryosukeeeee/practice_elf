@@ -4,7 +4,7 @@ use crate::{
     elf_header::{Elf64Header, ElfHeader},
     elf_program_header::Elf64ProgramHeader,
     elf_section_header::Elf64SectionHeader,
-    parse_elf64_symbol,
+    parse_elf64_rela, parse_elf64_symbol,
 };
 
 pub struct Elf64 {
@@ -12,10 +12,11 @@ pub struct Elf64 {
     section_headers: Vec<Elf64SectionHeader>,
     #[allow(dead_code)]
     program_headers: Vec<Elf64ProgramHeader>,
-    // TODO: can empty or multiple? confirm spec
     /// symbol name table
-    str: Mutex<Option<Elf64SectionHeader>>,
+    /// NOTE: An object file may have multiple string table sections.
+    str: Mutex<Option<Vec<Elf64SectionHeader>>>,
     /// section name table
+    /// NOTE: maybe hold 1
     shstr: Mutex<Option<Elf64SectionHeader>>,
     sym: Mutex<Option<Elf64SectionHeader>>,
     // TODO: remove this
@@ -46,13 +47,15 @@ impl Elf64 {
         self.header.clone()
     }
 
-    pub fn str(&self) -> Option<Elf64SectionHeader> {
-        let str = self.str.lock().unwrap();
+    pub fn str(&self) -> Option<Vec<Elf64SectionHeader>> {
+        let mut str = self.str.lock().unwrap();
         if let Some(str) = &*str {
             return Some(str.clone());
         }
 
-        let mut shstr = self.shstr.lock().unwrap();
+        let shstr = self.shstr.lock().unwrap();
+        let mut output = vec![];
+
         if let Some(_shstr) = &*shstr {
             for shdr in &self.section_headers {
                 let sname_addr = (_shstr.sh_offset + shdr.sh_name as u64) as usize;
@@ -61,12 +64,12 @@ impl Elf64 {
                 )(&self.buf[sname_addr..])
                 .unwrap();
                 if sname == b".strtab" {
-                    *shstr = Some(shdr.clone());
-                    return Some(shdr.clone());
+                    output.push(shdr.clone());
                 }
             }
         }
-        None
+        *str = Some(output.clone());
+        Some(output)
     }
 
     pub fn sym(&self) -> Option<Elf64SectionHeader> {
@@ -93,39 +96,91 @@ impl Elf64 {
         let shstr = self.shstr.lock().unwrap();
         let shstr = (*shstr).as_ref().unwrap();
 
-        for shdr in &self.section_headers {
+        for (i, shdr) in self.section_headers.iter().enumerate() {
             let name_addr = (shstr.sh_offset + shdr.sh_name as u64) as usize;
             let (_, name) =
                 nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(|c| c == 0x00)(
                     &self.buf[name_addr..],
                 )
                 .unwrap();
-            println!("name: {}", String::from_utf8_lossy(name));
+            println!("\t{}\tname: {}", i, String::from_utf8_lossy(name));
         }
     }
 
     pub fn show_symbol_names(&self) {
         let endian = self.header().endian().unwrap();
         let sym = self.sym().unwrap();
-        let str = self.str().unwrap();
+        let strs = self.str().unwrap();
 
-        for i in 0..(sym.sh_size / sym.sh_entsize) {
-            let addr = (sym.sh_offset + (sym.sh_entsize * i)) as usize;
-            let (_, symp) = parse_elf64_symbol(&self.buf[addr..], endian).unwrap();
+        for str in strs {
+            for i in 0..(sym.sh_size / sym.sh_entsize) {
+                let addr = (sym.sh_offset + (sym.sh_entsize * i)) as usize;
+                let (_, symp) = parse_elf64_symbol(&self.buf[addr..], endian).unwrap();
 
-            if symp.st_name == 0 {
+                if symp.st_name == 0 {
+                    continue;
+                }
+
+                let name = {
+                    let addr = (str.sh_offset + symp.st_name as u64) as usize;
+                    let (_, name) =
+                        nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(|c| {
+                            c == 0x00
+                        })(&self.buf[addr..])
+                        .unwrap();
+                    String::from_utf8_lossy(name)
+                };
+                println!("\t{} [{:?}]\t{}", i, symp.st_type().unwrap(), name);
+            }
+        }
+    }
+
+    pub fn show_relocations(&self) {
+        let endian = self.header().endian().unwrap();
+        let sym = self.sym().unwrap();
+        let strs = self.str().unwrap();
+
+        for shdr in &self.section_headers {
+            // NOTE:
+            //  SHT_RELA: 0x04
+            //  SHT_REL: 0x09
+            if (shdr.sh_type != 0x04) && (shdr.sh_type != 0x09) {
                 continue;
             }
 
-            let name = {
-                let addr = (str.sh_offset + symp.st_name as u64) as usize;
-                let (_, name) = nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(
-                    |c| c == 0x00,
-                )(&self.buf[addr..])
-                .unwrap();
-                String::from_utf8_lossy(name)
-            };
-            println!("\t{} [{:?}]\t{}", i, symp.st_type().unwrap(), name);
+            match shdr.sh_type {
+                //  SHT_RELA: 0x04
+                0x04 => {
+                    let rela = shdr;
+                    for j in 0..(rela.sh_size / rela.sh_entsize) {
+                        let relap_addr = (rela.sh_offset + rela.sh_entsize * j) as usize;
+                        let (_, relap) = parse_elf64_rela(&self.buf[relap_addr..], endian).unwrap();
+                        let symp_addr =
+                            (sym.sh_offset + sym.sh_entsize * relap.elf_r_sym()) as usize;
+                        let (_, symp) = parse_elf64_symbol(&self.buf[symp_addr..], endian).unwrap();
+                        if symp.st_name == 0 {
+                            continue;
+                        }
+
+                        let name = {
+                            // TODO: to consider multiple str entry
+                            let addr = (strs[0].sh_offset + symp.st_name as u64) as usize;
+                            let (_, name) =
+                                nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(
+                                    |c| c == 0x00,
+                                )(&self.buf[addr..])
+                                .unwrap();
+                            String::from_utf8_lossy(name)
+                        };
+                        println!("\t{} [{:?}]\t{}", j, relap.elf_r_sym(), name);
+                    }
+                }
+                //  SHT_REL: 0x09
+                0x09 => {
+                    todo!()
+                }
+                _ => unreachable!(),
+            }
         }
     }
 }

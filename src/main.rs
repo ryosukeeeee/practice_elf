@@ -9,11 +9,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let elf64 = parse_elf64(buf.as_slice()).unwrap();
 
-    println!("section names\n");
+    println!("section names");
     elf64.show_section_names();
 
-    println!("symbol names\n");
+    println!();
+    println!("symbol names");
     elf64.show_symbol_names();
+
+    println!();
+    println!("relocations");
+    elf64.show_relocations();
 
     Ok(())
 }

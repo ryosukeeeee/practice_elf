@@ -9,6 +9,7 @@ use crate::domain::{
         EMachine, Elf64Header, Elf64Ident, ElfHeader, ErrorKind, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
     },
     elf_program_header::{Elf64ProgramHeader, ElfSegmentFlags, ElfSegmentType},
+    elf_rela::Elf64Rela,
     elf_section_header::Elf64SectionHeader,
     elf_symbol::Elf64Symbol,
 };
@@ -199,6 +200,21 @@ pub fn parse_elf64_symbol(input: &[u8], endianness: Endianness) -> IResult<&[u8]
             st_shndx,
             st_value,
             st_size,
+        },
+    ))
+}
+
+pub fn parse_elf64_rela(input: &[u8], endianness: Endianness) -> IResult<&[u8], Elf64Rela> {
+    let (input, r_offset) = u64(endianness)(input)?;
+    let (input, r_info) = u64(endianness)(input)?;
+    let (input, r_addend) = i64(endianness)(input)?;
+
+    Ok((
+        input,
+        Elf64Rela {
+            r_offset,
+            r_info,
+            r_addend,
         },
     ))
 }
