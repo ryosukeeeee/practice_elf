@@ -25,5 +25,7 @@ pub(crate) type Elf64XWord = u64;
 #[allow(dead_code)]
 pub(crate) type Elf64SXWord = i64;
 
+pub(crate) type Elf64Section = u16;
+
 #[allow(dead_code)]
 pub const EI_NIDENT: usize = 16;

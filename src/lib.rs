@@ -1,10 +1,13 @@
 mod domain;
 
+use domain::elf_program_header::{ElfSegmentFlags, ElfSegmentType};
+use domain::elf_symbol::Elf64Symbol;
 pub use domain::*;
 
 use crate::domain::elf_header::{
     EMachine, Elf64Header, Elf64Ident, ElfHeader, ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3,
 };
+use crate::domain::elf_program_header::Elf64ProgramHeader;
 use crate::domain::elf_section_header::Elf64SectionHeader;
 use nom::bytes::complete::tag;
 use nom::number::{complete::*, Endianness};
@@ -108,7 +111,63 @@ pub fn parse_elf64_section_header(
     ))
 }
 
-pub fn show_section_names(header: Elf64Header, str_tbl_sh: Elf64SectionHeader, buf: &[u8]) {
+pub fn parse_elf64_program_header(
+    input: &[u8],
+    endianness: Endianness,
+) -> IResult<&[u8], Elf64ProgramHeader> {
+    let (input, p_type) = u32(endianness)(input)?;
+    let (input, p_flags) = u32(endianness)(input)?;
+    let (input, p_offset) = u64(endianness)(input)?;
+    let (input, p_vaddr) = u64(endianness)(input)?;
+    let (input, p_paddr) = u64(endianness)(input)?;
+    let (input, p_filesz) = u64(endianness)(input)?;
+    let (input, p_memsz) = u64(endianness)(input)?;
+    let (input, p_align) = u64(endianness)(input)?;
+
+    let p_type = ElfSegmentType::from_u32(p_type).unwrap();
+    let p_flags = ElfSegmentFlags::from_u32(p_flags);
+    Ok((
+        input,
+        Elf64ProgramHeader {
+            p_type,
+            p_flags,
+            p_offset,
+            p_vaddr,
+            p_paddr,
+            p_filesz,
+            p_memsz,
+            p_align,
+        },
+    ))
+}
+
+pub fn parse_elf64_symbol(input: &[u8], endianness: Endianness) -> IResult<&[u8], Elf64Symbol> {
+    let (input, st_name) = u32(endianness)(input)?;
+    let (input, st_info) = u8(input)?;
+    let (input, st_other) = u8(input)?;
+    let (input, st_shndx) = u16(endianness)(input)?;
+    let (input, st_value) = u64(endianness)(input)?;
+    let (input, st_size) = u64(endianness)(input)?;
+
+    Ok((
+        input,
+        Elf64Symbol {
+            st_name,
+            st_info,
+            st_other,
+            st_shndx,
+            st_value,
+            st_size,
+        },
+    ))
+}
+
+pub fn show_section_names(
+    header: &Elf64Header,
+    str_tbl_sh: Elf64SectionHeader,
+    buf: &[u8],
+) -> Option<Elf64SectionHeader> {
+    let mut output = None;
     for i in 0..(header.e_shnum) {
         let addr = (header.e_shoff + (header.e_shentsize as u64 * i as u64)) as usize;
         let (_, shdr) = parse_elf64_section_header(&buf[addr..], header.endian().unwrap()).unwrap();
@@ -119,5 +178,41 @@ pub fn show_section_names(header: Elf64Header, str_tbl_sh: Elf64SectionHeader, b
             )
             .unwrap();
         println!("name: {}", String::from_utf8_lossy(name));
+        if name == b".strtab" {
+            output = Some(shdr);
+        }
+    }
+    output
+}
+
+pub fn show_symbol_names(header: &Elf64Header, str_tab: &Elf64SectionHeader, buf: &[u8]) {
+    let endian = header.endian().unwrap();
+
+    for i in 0..header.e_shnum as u64 {
+        let addr = (header.e_shoff + (header.e_shentsize as u64 * i)) as usize;
+        let (_, shdr) = parse_elf64_section_header(&buf[addr..], endian).unwrap();
+        if shdr.sh_type != 0x02 {
+            continue;
+        }
+        println!("sym: {:?}", &shdr);
+        // find symbol table section header
+        let sym = shdr;
+        for j in 0..(sym.sh_size / sym.sh_entsize) {
+            let addr = (sym.sh_offset + (sym.sh_entsize * j)) as usize;
+            let (_, symp) = parse_elf64_symbol(&buf[addr..], endian).unwrap();
+
+            if symp.st_name == 0 {
+                continue;
+            }
+            let name = {
+                let addr = (str_tab.sh_offset + symp.st_name as u64) as usize;
+                let (_, name) = nom::bytes::complete::take_till::<_, _, nom::error::Error<_>>(
+                    |c| c == 0x00,
+                )(&buf[addr..])
+                .unwrap();
+                String::from_utf8_lossy(name)
+            };
+            println!("\t{} [{:?}]\t{}", j, symp.st_type().unwrap(), name);
+        }
     }
 }
