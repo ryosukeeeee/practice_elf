@@ -3,5 +3,5 @@ services:
   app:
     build: .
     volumes:
-      - ./sample:/home/work
+      - .:/home/
     command: /bin/bash ./generate_sample_elf64_files.sh
