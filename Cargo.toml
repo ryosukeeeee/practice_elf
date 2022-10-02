@@ -16,3 +16,4 @@ name = "practice_elf"
 [dependencies]
 nom = "7.1.1"
 thiserror = "1.0"
+clap = { version = "4.0.0-rc.2", features = ["derive"]}

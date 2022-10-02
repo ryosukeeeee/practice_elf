@@ -1,9 +1,23 @@
+use clap::Parser;
 use practice_elf::*;
 use std::fs::File;
 use std::io::Read;
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    name: Vec<String>,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut file = File::open("prepare_elf64/sample/elfsamp.o")?;
+    let cli = Cli::parse();
+    if cli.name.is_empty() {
+        println!("no file passed");
+        return Ok(());
+    }
+    let name = &cli.name[0];
+
+    let mut file = File::open(name)?;
     let mut buf = Vec::new();
     let _ = file.read_to_end(&mut buf)?;
 
